@@ -49,6 +49,9 @@ func (s *Session) NewHTTP3Transport() (*HTTP3Transport, error) {
 	tlsConfig := &tls.Config{
 		InsecureSkipVerify: s.InsecureSkipVerify,
 	}
+	if s.keyLogWriter != nil {
+		tlsConfig.KeyLogWriter = s.keyLogWriter
+	}
 
 	quicConfig := &quic.Config{
 		MaxIdleTimeout:                 90 * time.Second,

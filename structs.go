@@ -145,6 +145,10 @@ type Session struct {
 
 	ctx context.Context
 
+	keyLogWriter  io.Writer
+	keyLogCloser  io.Closer
+	keyLogFromEnv bool
+
 	mu *sync.Mutex
 
 	closed bool

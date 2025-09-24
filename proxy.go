@@ -295,6 +295,9 @@ func (c *proxyDialer) connectToProxy(ctx context.Context, proxyURL *url.URL, net
 				ServerName:         proxyURL.Hostname(),
 				InsecureSkipVerify: true,
 			}
+			if c.sess != nil && c.sess.keyLogWriter != nil {
+				tlsConf.KeyLogWriter = c.sess.keyLogWriter
+			}
 			tlsConn, err := tls.Dial(network, proxyURL.Host, &tlsConf)
 			if err != nil {
 				return nil, "", err
@@ -495,6 +498,9 @@ func (c *proxyDialer) upgradeToTLS(conn net.Conn, proxyURL *url.URL) (net.Conn, 
 		NextProtos:         []string{"h2", "http/1.1"},
 		ServerName:         proxyURL.Hostname(),
 		InsecureSkipVerify: true,
+	}
+	if c.sess != nil && c.sess.keyLogWriter != nil {
+		tlsConf.KeyLogWriter = c.sess.keyLogWriter
 	}
 	tlsConn := tls.UClient(conn, &tlsConf, tls.HelloCustom)
 

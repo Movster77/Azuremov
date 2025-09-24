@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"os"
 	"runtime"
 	"strconv"
 	"sync"
@@ -18,7 +19,11 @@ import (
 // NewSession creates a new session
 // It is a shortcut for NewSessionWithContext(context.Background())
 func NewSession() *Session {
-	return NewSessionWithContext(context.Background())
+	s := NewSessionWithContext(context.Background())
+	if s.keyLogWriter == nil {
+		_ = s.EnableKeyLogFromEnv()
+	}
+	return s
 }
 
 // NewSessionWithContext creates a new session with context
@@ -45,8 +50,69 @@ func NewSessionWithContext(ctx context.Context) *Session {
 	}
 
 	s.setupFinalizer()
+	_ = s.EnableKeyLogFromEnv()
 
 	return s
+}
+
+func (s *Session) SetKeyLogWriter(w io.Writer) {
+	if s == nil {
+		return
+	}
+
+	s.closeKeyLogWriterOwned()
+	s.setKeyLogWriter(w, false)
+}
+
+func (s *Session) EnableKeyLogFromEnv() error {
+	if s == nil {
+		return nil
+	}
+
+	path := os.Getenv("SSLKEYLOGFILE")
+	if path == "" {
+		return nil
+	}
+
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+
+	s.closeKeyLogWriterOwned()
+	s.setKeyLogWriter(f, true)
+	return nil
+}
+
+func (s *Session) setKeyLogWriter(w io.Writer, fromEnv bool) {
+	s.keyLogWriter = w
+	if closer, ok := w.(io.Closer); ok {
+		s.keyLogCloser = closer
+	} else {
+		s.keyLogCloser = nil
+	}
+	s.keyLogFromEnv = fromEnv && w != nil
+	s.updateHTTP3KeyLogWriter()
+}
+
+func (s *Session) closeKeyLogWriterOwned() {
+	if s.keyLogFromEnv && s.keyLogCloser != nil {
+		_ = s.keyLogCloser.Close()
+	}
+	s.keyLogWriter = nil
+	s.keyLogCloser = nil
+	s.keyLogFromEnv = false
+	s.updateHTTP3KeyLogWriter()
+}
+
+func (s *Session) updateHTTP3KeyLogWriter() {
+	if s == nil || s.HTTP3Config == nil || s.HTTP3Config.transport == nil || s.HTTP3Config.transport.Transport == nil {
+		return
+	}
+
+	if s.HTTP3Config.transport.Transport.TLSClientConfig != nil {
+		s.HTTP3Config.transport.Transport.TLSClientConfig.KeyLogWriter = s.keyLogWriter
+	}
 }
 
 // SetTimeout sets timeout for the session
@@ -454,6 +520,8 @@ func (s *Session) Close() {
 	s.mu.Unlock()
 
 	s.ClearProxy()
+
+	s.closeKeyLogWriterOwned()
 
 	// Close HTTP/3 transport properly
 	if s.HTTP3Config != nil && s.HTTP3Config.transport != nil {
