@@ -99,6 +99,10 @@ func (s *Session) upgradeTLS(ctx context.Context, conn net.Conn, addr string) (n
 		},
 	}
 
+	if s.keyLogWriter != nil {
+		config.KeyLogWriter = s.keyLogWriter
+	}
+
 	if s.ModifyConfig != nil {
 		if err := s.ModifyConfig(&config); err != nil {
 			return nil, err
